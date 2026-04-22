@@ -1,14 +1,14 @@
-// app/routes/app.import.tsx
+﻿// app/routes/app.import.tsx
 // Bulk CSV import for compatibility rules
 // CSV format: year,make,model,product_id,product_title,notes
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import {
   Page, Layout, Card, Text, BlockStack, Button, Banner,
-  DataTable, Badge, ProgressBar, List, Link, Box,
-  InlineStack, Divider, DropZone, Thumbnail, Icon,
+  DataTable, Badge, Box, InlineStack, DropZone, Icon,
+  List,
 } from "@shopify/polaris";
 import { NoteIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -38,7 +38,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const lines = csvText.trim().split("\n").filter(Boolean);
     if (lines.length < 2) return json({ error: "CSV must have a header row and at least one data row" }, { status: 400 });
 
-    // Create job record
     const job = await prisma.importJob.create({
       data: { shop: session.shop, filename, status: "processing", totalRows: lines.length - 1 },
     });
@@ -47,7 +46,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let imported = 0;
     let skipped = 0;
 
-    // Parse header
     const header = lines[0].toLowerCase().split(",").map(h => h.trim().replace(/"/g, ""));
     const idx = {
       year: header.indexOf("year"),
@@ -58,42 +56,51 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       notes: header.indexOf("notes"),
     };
 
-    if (idx.year === -1 || idx.make === -1 || idx.model === -1 || idx.product_id === -1 || idx.product_title === -1) {
-      await prisma.importJob.update({ where: { id: job.id }, data: { status: "failed", errors: JSON.stringify(["Missing required columns: year, make, model, product_id, product_title"]) } });
-      return json({ error: "Missing required columns" }, { status: 400 });
+    if (idx.year === -1 || idx.make === -1 || idx.model === -1) {
+      await prisma.importJob.update({
+        where: { id: job.id },
+        data: { status: "failed", errors: JSON.stringify(["Missing required columns: year, make, model"]) },
+      });
+      return json({ error: "Missing required columns: year, make, model" }, { status: 400 });
     }
 
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ""));
       const year = parseInt(cols[idx.year]);
-      const make = cols[idx.make];
-      const model = cols[idx.model];
-      const productId = cols[idx.product_id];
-      const productTitle = cols[idx.product_title];
-      const notes = idx.notes !== -1 ? cols[idx.notes] : undefined;
+      const make = cols[idx.make]?.toUpperCase();
+      const model = cols[idx.model]?.toUpperCase();
+      const productId = idx.product_id !== -1 ? cols[idx.product_id] : null;
+      const productTitle = idx.product_title !== -1 ? cols[idx.product_title] : null;
+      const notes = idx.notes !== -1 ? cols[idx.notes] : null;
 
-      if (!year || !make || !model || !productId || !productTitle) {
-        errors.push(`Row ${i + 1}: Missing required fields`);
+      if (!year || !make || !model) {
+        errors.push(`Row ${i + 1}: Missing year, make, or model`);
         skipped++;
         continue;
       }
 
       try {
-        const vehicleModel = await prisma.vehicleModel.findFirst({
-          where: { name: model, make: { name: make, year: { year } } },
-        });
+        // Find or create Year
+        let yearRecord = await prisma.year.findFirst({ where: { year } });
+        if (!yearRecord) yearRecord = await prisma.year.create({ data: { year } });
 
-        if (!vehicleModel) {
-          errors.push(`Row ${i + 1}: Vehicle not found — ${year} ${make} ${model}`);
-          skipped++;
-          continue;
+        // Find or create Make
+        let makeRecord = await prisma.make.findFirst({ where: { name: make, yearId: yearRecord.id } });
+        if (!makeRecord) makeRecord = await prisma.make.create({ data: { name: make, yearId: yearRecord.id } });
+
+        // Find or create Model
+        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name: model, makeId: makeRecord.id } });
+        if (!vehicleModel) vehicleModel = await prisma.vehicleModel.create({ data: { name: model, makeId: makeRecord.id } });
+
+        // Optionally link product
+        if (productId && productTitle) {
+          await prisma.productCompatibility.upsert({
+            where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId: vehicleModel.id } },
+            update: { productTitle, notes: notes || null },
+            create: { shopifyProductId: productId, productTitle, modelId: vehicleModel.id, notes: notes || null },
+          });
         }
 
-        await prisma.productCompatibility.upsert({
-          where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId: vehicleModel.id } },
-          update: { productTitle, notes: notes || null },
-          create: { shopifyProductId: productId, productTitle, modelId: vehicleModel.id, notes: notes || null },
-        });
         imported++;
       } catch (e: any) {
         errors.push(`Row ${i + 1}: ${e.message}`);
@@ -147,7 +154,7 @@ export default function Import() {
     const lines = text.trim().split("\n").filter(Boolean);
     if (lines.length < 2) { setParseError("File must have a header + at least one row."); return; }
     const header = lines[0].split(",").map(h => h.trim().replace(/"/g, ""));
-    const required = ["year", "make", "model", "product_id", "product_title"];
+    const required = ["year", "make", "model"];
     const missing = required.filter(r => !header.map(h => h.toLowerCase()).includes(r));
     if (missing.length) { setParseError(`Missing columns: ${missing.join(", ")}`); return; }
     const rows = lines.slice(1, 6).map(l => l.split(",").map(c => c.trim().replace(/^"|"$/g, "")));
@@ -184,11 +191,11 @@ export default function Import() {
       secondaryActions={[{
         content: "Download Template",
         onAction: () => {
-          const csv = "year,make,model,product_id,product_title,notes\n2023,Toyota,Camry,gid://shopify/Product/123,OEM Brake Pad Set,Front only\n2023,Ford,F-150,gid://shopify/Product/456,Air Filter Kit,";
+          const csv = "year,make,model,product_id,product_title,notes\n2023,TOYOTA,LAND CRUISER,,\n2023,JEEP,WRANGLER JK,,\n";
           const blob = new Blob([csv], { type: "text/csv" });
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = "ymm-compatibility-template.csv";
+          a.download = "ymm-vehicles-template.csv";
           a.click();
         },
       }]}
@@ -196,7 +203,7 @@ export default function Import() {
       <Layout>
         <Layout.Section>
           <Banner title="CSV Format" tone="info">
-            <p>Required columns: <strong>year, make, model, product_id, product_title</strong>. Optional: <strong>notes</strong>. Use Shopify Product GIDs for product_id (e.g. <code>gid://shopify/Product/123456789</code>). Download the template to get started.</p>
+            <p>Required columns: <strong>year, make, model</strong>. Optional: <strong>product_id, product_title, notes</strong>. Vehicles will be created automatically. You can assign products later via the Compatibility page.</p>
           </Banner>
         </Layout.Section>
 

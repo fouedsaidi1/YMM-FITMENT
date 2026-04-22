@@ -2293,6 +2293,7 @@ const loader$4 = async ({ request }) => {
   return json({ jobs });
 };
 const action = async ({ request }) => {
+  var _a2, _b;
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
   const intent = form.get("intent");
@@ -2317,37 +2318,40 @@ const action = async ({ request }) => {
       product_title: header.indexOf("product_title"),
       notes: header.indexOf("notes")
     };
-    if (idx.year === -1 || idx.make === -1 || idx.model === -1 || idx.product_id === -1 || idx.product_title === -1) {
-      await prisma.importJob.update({ where: { id: job.id }, data: { status: "failed", errors: JSON.stringify(["Missing required columns: year, make, model, product_id, product_title"]) } });
-      return json({ error: "Missing required columns" }, { status: 400 });
+    if (idx.year === -1 || idx.make === -1 || idx.model === -1) {
+      await prisma.importJob.update({
+        where: { id: job.id },
+        data: { status: "failed", errors: JSON.stringify(["Missing required columns: year, make, model"]) }
+      });
+      return json({ error: "Missing required columns: year, make, model" }, { status: 400 });
     }
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
       const year = parseInt(cols[idx.year]);
-      const make = cols[idx.make];
-      const model = cols[idx.model];
-      const productId = cols[idx.product_id];
-      const productTitle = cols[idx.product_title];
-      const notes = idx.notes !== -1 ? cols[idx.notes] : void 0;
-      if (!year || !make || !model || !productId || !productTitle) {
-        errors.push(`Row ${i + 1}: Missing required fields`);
+      const make = (_a2 = cols[idx.make]) == null ? void 0 : _a2.toUpperCase();
+      const model = (_b = cols[idx.model]) == null ? void 0 : _b.toUpperCase();
+      const productId = idx.product_id !== -1 ? cols[idx.product_id] : null;
+      const productTitle = idx.product_title !== -1 ? cols[idx.product_title] : null;
+      const notes = idx.notes !== -1 ? cols[idx.notes] : null;
+      if (!year || !make || !model) {
+        errors.push(`Row ${i + 1}: Missing year, make, or model`);
         skipped++;
         continue;
       }
       try {
-        const vehicleModel = await prisma.vehicleModel.findFirst({
-          where: { name: model, make: { name: make, year: { year } } }
-        });
-        if (!vehicleModel) {
-          errors.push(`Row ${i + 1}: Vehicle not found — ${year} ${make} ${model}`);
-          skipped++;
-          continue;
+        let yearRecord = await prisma.year.findFirst({ where: { year } });
+        if (!yearRecord) yearRecord = await prisma.year.create({ data: { year } });
+        let makeRecord = await prisma.make.findFirst({ where: { name: make, yearId: yearRecord.id } });
+        if (!makeRecord) makeRecord = await prisma.make.create({ data: { name: make, yearId: yearRecord.id } });
+        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name: model, makeId: makeRecord.id } });
+        if (!vehicleModel) vehicleModel = await prisma.vehicleModel.create({ data: { name: model, makeId: makeRecord.id } });
+        if (productId && productTitle) {
+          await prisma.productCompatibility.upsert({
+            where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId: vehicleModel.id } },
+            update: { productTitle, notes: notes || null },
+            create: { shopifyProductId: productId, productTitle, modelId: vehicleModel.id, notes: notes || null }
+          });
         }
-        await prisma.productCompatibility.upsert({
-          where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId: vehicleModel.id } },
-          update: { productTitle, notes: notes || null },
-          create: { shopifyProductId: productId, productTitle, modelId: vehicleModel.id, notes: notes || null }
-        });
         imported++;
       } catch (e) {
         errors.push(`Row ${i + 1}: ${e.message}`);
@@ -2398,7 +2402,7 @@ function Import() {
       return;
     }
     const header = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""));
-    const required = ["year", "make", "model", "product_id", "product_title"];
+    const required = ["year", "make", "model"];
     const missing = required.filter((r) => !header.map((h) => h.toLowerCase()).includes(r));
     if (missing.length) {
       setParseError(`Missing columns: ${missing.join(", ")}`);
@@ -2435,23 +2439,21 @@ function Import() {
       secondaryActions: [{
         content: "Download Template",
         onAction: () => {
-          const csv = "year,make,model,product_id,product_title,notes\n2023,Toyota,Camry,gid://shopify/Product/123,OEM Brake Pad Set,Front only\n2023,Ford,F-150,gid://shopify/Product/456,Air Filter Kit,";
+          const csv = "year,make,model,product_id,product_title,notes\n2023,TOYOTA,LAND CRUISER,,\n2023,JEEP,WRANGLER JK,,\n";
           const blob = new Blob([csv], { type: "text/csv" });
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
-          a.download = "ymm-compatibility-template.csv";
+          a.download = "ymm-vehicles-template.csv";
           a.click();
         }
       }],
       children: /* @__PURE__ */ jsxs(Layout, { children: [
         /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Banner, { title: "CSV Format", tone: "info", children: /* @__PURE__ */ jsxs("p", { children: [
           "Required columns: ",
-          /* @__PURE__ */ jsx("strong", { children: "year, make, model, product_id, product_title" }),
+          /* @__PURE__ */ jsx("strong", { children: "year, make, model" }),
           ". Optional: ",
-          /* @__PURE__ */ jsx("strong", { children: "notes" }),
-          ". Use Shopify Product GIDs for product_id (e.g. ",
-          /* @__PURE__ */ jsx("code", { children: "gid://shopify/Product/123456789" }),
-          "). Download the template to get started."
+          /* @__PURE__ */ jsx("strong", { children: "product_id, product_title, notes" }),
+          ". Vehicles will be created automatically. You can assign products later via the Compatibility page."
         ] }) }) }),
         /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
           /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Upload CSV File" }),
@@ -3116,7 +3118,7 @@ const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-BMVHlWtb.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/root-BDt2lil-.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes/app.compatibility": { "id": "routes/app.compatibility", "parentId": "routes/app", "path": "compatibility", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.compatibility-BwFEfZ5_.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] }, "routes/app.inventory": { "id": "routes/app.inventory", "parentId": "routes/app", "path": "inventory", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.inventory-G32PqCF2.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.garage": { "id": "routes/api.garage", "parentId": "root", "path": "api/garage", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.garage-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app.import": { "id": "routes/app.import", "parentId": "routes/app", "path": "import", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.import-BDctW5Nv.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app._index-DXPcKoV8.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.ymm": { "id": "routes/api.ymm", "parentId": "root", "path": "api/ymm", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.ymm-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": true, "module": "/assets/app-DUk__qsH.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] } }, "url": "/assets/manifest-1c01e099.js", "version": "1c01e099" };
+const serverManifest = { "entry": { "module": "/assets/entry.client-BMVHlWtb.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/root-BDt2lil-.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes/app.compatibility": { "id": "routes/app.compatibility", "parentId": "routes/app", "path": "compatibility", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.compatibility-BwFEfZ5_.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] }, "routes/app.inventory": { "id": "routes/app.inventory", "parentId": "routes/app", "path": "inventory", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.inventory-G32PqCF2.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.garage": { "id": "routes/api.garage", "parentId": "root", "path": "api/garage", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.garage-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app.import": { "id": "routes/app.import", "parentId": "routes/app", "path": "import", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.import-2xvn5H3Z.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app._index-DXPcKoV8.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.ymm": { "id": "routes/api.ymm", "parentId": "root", "path": "api/ymm", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.ymm-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": true, "module": "/assets/app-DUk__qsH.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] } }, "url": "/assets/manifest-25311d19.js", "version": "25311d19" };
 const mode = "production";
 const assetsBuildDirectory = "build\\client";
 const basename = "/";
