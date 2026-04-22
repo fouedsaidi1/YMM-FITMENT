@@ -2339,11 +2339,11 @@ const action = async ({ request }) => {
         continue;
       }
       try {
-        let yearRecord = await prisma.year.findFirst({ where: { year } });
-        if (!yearRecord) yearRecord = await prisma.year.create({ data: { year } });
-        let makeRecord = await prisma.make.findFirst({ where: { name: make, yearId: yearRecord.id } });
-        if (!makeRecord) makeRecord = await prisma.make.create({ data: { name: make, yearId: yearRecord.id } });
-        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name: model, makeId: makeRecord.id } });
+        let yearRecord = await prisma.vehicleYear.findFirst({ where: { year } });
+        if (!yearRecord) yearRecord = await prisma.vehicleYear.create({ data: { year } });
+        let makeRecord = await prisma.vehicleMake.findFirst({ where: { name_yearId: { name: make, yearId: yearRecord.id } } });
+        if (!makeRecord) makeRecord = await prisma.vehicleMake.create({ data: { name: make, yearId: yearRecord.id } });
+        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name_makeId: { name: model, makeId: makeRecord.id } } });
         if (!vehicleModel) vehicleModel = await prisma.vehicleModel.create({ data: { name: model, makeId: makeRecord.id } });
         if (productId && productTitle) {
           await prisma.productCompatibility.upsert({

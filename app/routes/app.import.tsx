@@ -81,15 +81,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       try {
         // Find or create Year
-        let yearRecord = await prisma.year.findFirst({ where: { year } });
-        if (!yearRecord) yearRecord = await prisma.year.create({ data: { year } });
+        let yearRecord = await prisma.vehicleYear.findFirst({ where: { year } });
+        if (!yearRecord) yearRecord = await prisma.vehicleYear.create({ data: { year } });
 
         // Find or create Make
-        let makeRecord = await prisma.make.findFirst({ where: { name: make, yearId: yearRecord.id } });
-        if (!makeRecord) makeRecord = await prisma.make.create({ data: { name: make, yearId: yearRecord.id } });
+        let makeRecord = await prisma.vehicleMake.findFirst({ where: { name_yearId: { name: make, yearId: yearRecord.id } } });
+        if (!makeRecord) makeRecord = await prisma.vehicleMake.create({ data: { name: make, yearId: yearRecord.id } });
 
         // Find or create Model
-        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name: model, makeId: makeRecord.id } });
+        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name_makeId: { name: model, makeId: makeRecord.id } } });
         if (!vehicleModel) vehicleModel = await prisma.vehicleModel.create({ data: { name: model, makeId: makeRecord.id } });
 
         // Optionally link product
@@ -287,3 +287,5 @@ export default function Import() {
     </Page>
   );
 }
+
+
