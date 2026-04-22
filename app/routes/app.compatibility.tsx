@@ -1,4 +1,4 @@
-﻿@'
+﻿
 // app/routes/app.compatibility.tsx
 import { useState } from "react";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
@@ -230,4 +230,4 @@ export default function Compatibility() {
     </Page>
   );
 }
-'@ | Set-Content app/routes/app.compatibility.tsx -Encoding UTF8
+
