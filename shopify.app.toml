@@ -2,7 +2,7 @@
 
 client_id = "25fe1eb8113a4ffe32866781ed8bdd23"
 name = "YMM-Fitment"
-application_url = "https://unexpired-usable-jeep.ngrok-free.dev/app"
+application_url = "https://ymm-fitment-production.up.railway.app/app"
 embedded = true
 
 [webhooks]
@@ -15,9 +15,9 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://unexpired-usable-jeep.ngrok-free.dev/auth/callback",
-  "https://unexpired-usable-jeep.ngrok-free.dev/auth/shopify/callback",
-  "https://unexpired-usable-jeep.ngrok-free.dev/api/auth/callback"
+  "https://ymm-fitment-production.up.railway.app/auth/callback",
+  "https://ymm-fitment-production.up.railway.app/auth/shopify/callback",
+  "https://ymm-fitment-production.up.railway.app/api/auth/callback"
 ]
 
 [pos]
