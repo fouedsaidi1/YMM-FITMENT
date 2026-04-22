@@ -1,17 +1,18 @@
-// app/routes/app.compatibility.tsx
-import { useState, useCallback } from "react";
+﻿// app/routes/app.compatibility.tsx
+import { useState } from "react";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import {
   Page, Layout, Card, Text, BlockStack, InlineGrid,
-  Select, Button, DataTable, Badge, Modal, TextField,
-  Filters, Banner, Spinner, Box, InlineStack, Divider,
+  Select, Button, DataTable, Modal, TextField,
+  Banner, Spinner, Box, InlineStack,
 } from "@shopify/polaris";
+import { ResourcePicker } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  await authenticate.admin(request);
   const url = new URL(request.url);
   const year = url.searchParams.get("year") || "";
   const make = url.searchParams.get("make") || "";
@@ -79,6 +80,7 @@ export default function Compatibility() {
   const loading = nav.state !== "idle";
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [productId, setProductId] = useState("");
   const [productTitle, setProductTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -94,6 +96,15 @@ export default function Compatibility() {
     if (key === "year") { params.make = ""; params.model = ""; }
     if (key === "make") { params.model = ""; }
     submit(params, { method: "get" });
+  };
+
+  const handleProductPick = (payload: any) => {
+    const product = payload.selection?.[0];
+    if (product) {
+      setProductId(product.id);
+      setProductTitle(product.title);
+    }
+    setPickerOpen(false);
   };
 
   const handleAdd = () => {
@@ -116,6 +127,12 @@ export default function Compatibility() {
     submit(formData, { method: "post" });
   };
 
+  const openModal = () => {
+    setSelectedModelId(models.find(m => m.name === filters.model)?.id.toString() || "");
+    setProductId(""); setProductTitle(""); setNotes("");
+    setModalOpen(true);
+  };
+
   const rows = compatibilities.map((c) => [
     c.productTitle,
     `${c.model.make.year.year} ${c.model.make.name} ${c.model.name}`,
@@ -126,11 +143,7 @@ export default function Compatibility() {
   return (
     <Page
       title="Compatibility Manager"
-      primaryAction={
-        filters.model
-          ? { content: "Add Compatibility Rule", onAction: () => { setSelectedModelId(models.find(m => m.name === filters.model)?.id.toString() || ""); setModalOpen(true); } }
-          : undefined
-      }
+      primaryAction={filters.model ? { content: "Add Compatibility Rule", onAction: openModal } : undefined}
     >
       <Layout>
         <Layout.Section>
@@ -175,6 +188,14 @@ export default function Compatibility() {
         </Layout.Section>
       </Layout>
 
+      <ResourcePicker
+        resourceType="Product"
+        open={pickerOpen}
+        onSelection={handleProductPick}
+        onCancel={() => setPickerOpen(false)}
+        allowMultiple={false}
+      />
+
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -184,21 +205,16 @@ export default function Compatibility() {
       >
         <Modal.Section>
           <BlockStack gap="400">
-            <TextField
-              label="Shopify Product GID"
-              value={productId}
-              onChange={setProductId}
-              placeholder="gid://shopify/Product/123456789"
-              helpText="Find this in your Shopify admin URL when viewing the product"
-              autoComplete="off"
-            />
-            <TextField
-              label="Product Title"
-              value={productTitle}
-              onChange={setProductTitle}
-              placeholder="e.g. OEM Brake Pad Set Front"
-              autoComplete="off"
-            />
+            <InlineStack gap="300" align="start">
+              <Button onClick={() => setPickerOpen(true)}>
+                {productId ? "Change Product" : "Select Product from Store"}
+              </Button>
+            </InlineStack>
+            {productTitle && (
+              <Banner tone="success">
+                <p>Selected: <strong>{productTitle}</strong></p>
+              </Banner>
+            )}
             <TextField
               label="Notes (optional)"
               value={notes}
