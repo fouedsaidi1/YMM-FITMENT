@@ -7,8 +7,7 @@ import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import {
   Page, Layout, Card, Text, BlockStack, Button, Banner,
-  DataTable, Badge, Box, InlineStack, DropZone, Icon,
-  List,
+  DataTable, Badge, Box, InlineStack, DropZone, Icon, List,
 } from "@shopify/polaris";
 import { NoteIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
@@ -64,6 +63,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return json({ error: "Missing required columns: year, make, model" }, { status: 400 });
     }
 
+    // Cache to avoid redundant DB lookups
+    const yearCache = new Map<number, number>();
+    const makeCache = new Map<string, number>();
+    const modelCache = new Map<string, number>();
+
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ""));
       const year = parseInt(cols[idx.year]);
@@ -80,24 +84,50 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
 
       try {
-        // Find or create Year
-        let yearRecord = await prisma.vehicleYear.findFirst({ where: { year } });
-        if (!yearRecord) yearRecord = await prisma.vehicleYear.create({ data: { year } });
+        // Year
+        let yearId = yearCache.get(year);
+        if (!yearId) {
+          const yr = await prisma.vehicleYear.upsert({
+            where: { year },
+            update: {},
+            create: { year },
+          });
+          yearId = yr.id;
+          yearCache.set(year, yearId);
+        }
 
-        // Find or create Make
-        let makeRecord = await prisma.vehicleMake.findFirst({ where: { name_yearId: { name: make, yearId: yearRecord.id } } });
-        if (!makeRecord) makeRecord = await prisma.vehicleMake.create({ data: { name: make, yearId: yearRecord.id } });
+        // Make
+        const makeKey = `${make}__${yearId}`;
+        let makeId = makeCache.get(makeKey);
+        if (!makeId) {
+          const mk = await prisma.vehicleMake.upsert({
+            where: { name_yearId: { name: make, yearId } },
+            update: {},
+            create: { name: make, yearId },
+          });
+          makeId = mk.id;
+          makeCache.set(makeKey, makeId);
+        }
 
-        // Find or create Model
-        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name_makeId: { name: model, makeId: makeRecord.id } } });
-        if (!vehicleModel) vehicleModel = await prisma.vehicleModel.create({ data: { name: model, makeId: makeRecord.id } });
+        // Model
+        const modelKey = `${model}__${makeId}`;
+        let modelId = modelCache.get(modelKey);
+        if (!modelId) {
+          const md = await prisma.vehicleModel.upsert({
+            where: { name_makeId: { name: model, makeId } },
+            update: {},
+            create: { name: model, makeId },
+          });
+          modelId = md.id;
+          modelCache.set(modelKey, modelId);
+        }
 
-        // Optionally link product
+        // Optional product link
         if (productId && productTitle) {
           await prisma.productCompatibility.upsert({
-            where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId: vehicleModel.id } },
+            where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId } },
             update: { productTitle, notes: notes || null },
-            create: { shopifyProductId: productId, productTitle, modelId: vehicleModel.id, notes: notes || null },
+            create: { shopifyProductId: productId, productTitle, modelId, notes: notes || null },
           });
         }
 
@@ -203,7 +233,7 @@ export default function Import() {
       <Layout>
         <Layout.Section>
           <Banner title="CSV Format" tone="info">
-            <p>Required columns: <strong>year, make, model</strong>. Optional: <strong>product_id, product_title, notes</strong>. Vehicles will be created automatically. You can assign products later via the Compatibility page.</p>
+            <p>Required columns: <strong>year, make, model</strong>. Optional: <strong>product_id, product_title, notes</strong>. Vehicles will be created automatically. Assign products later via the Compatibility page.</p>
           </Banner>
         </Layout.Section>
 
@@ -287,5 +317,3 @@ export default function Import() {
     </Page>
   );
 }
-
-

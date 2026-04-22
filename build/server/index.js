@@ -2325,6 +2325,9 @@ const action = async ({ request }) => {
       });
       return json({ error: "Missing required columns: year, make, model" }, { status: 400 });
     }
+    const yearCache = /* @__PURE__ */ new Map();
+    const makeCache = /* @__PURE__ */ new Map();
+    const modelCache = /* @__PURE__ */ new Map();
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
       const year = parseInt(cols[idx.year]);
@@ -2339,17 +2342,43 @@ const action = async ({ request }) => {
         continue;
       }
       try {
-        let yearRecord = await prisma.vehicleYear.findFirst({ where: { year } });
-        if (!yearRecord) yearRecord = await prisma.vehicleYear.create({ data: { year } });
-        let makeRecord = await prisma.vehicleMake.findFirst({ where: { name_yearId: { name: make, yearId: yearRecord.id } } });
-        if (!makeRecord) makeRecord = await prisma.vehicleMake.create({ data: { name: make, yearId: yearRecord.id } });
-        let vehicleModel = await prisma.vehicleModel.findFirst({ where: { name_makeId: { name: model, makeId: makeRecord.id } } });
-        if (!vehicleModel) vehicleModel = await prisma.vehicleModel.create({ data: { name: model, makeId: makeRecord.id } });
+        let yearId = yearCache.get(year);
+        if (!yearId) {
+          const yr = await prisma.vehicleYear.upsert({
+            where: { year },
+            update: {},
+            create: { year }
+          });
+          yearId = yr.id;
+          yearCache.set(year, yearId);
+        }
+        const makeKey = `${make}__${yearId}`;
+        let makeId = makeCache.get(makeKey);
+        if (!makeId) {
+          const mk = await prisma.vehicleMake.upsert({
+            where: { name_yearId: { name: make, yearId } },
+            update: {},
+            create: { name: make, yearId }
+          });
+          makeId = mk.id;
+          makeCache.set(makeKey, makeId);
+        }
+        const modelKey = `${model}__${makeId}`;
+        let modelId = modelCache.get(modelKey);
+        if (!modelId) {
+          const md = await prisma.vehicleModel.upsert({
+            where: { name_makeId: { name: model, makeId } },
+            update: {},
+            create: { name: model, makeId }
+          });
+          modelId = md.id;
+          modelCache.set(modelKey, modelId);
+        }
         if (productId && productTitle) {
           await prisma.productCompatibility.upsert({
-            where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId: vehicleModel.id } },
+            where: { shopifyProductId_modelId: { shopifyProductId: productId, modelId } },
             update: { productTitle, notes: notes || null },
-            create: { shopifyProductId: productId, productTitle, modelId: vehicleModel.id, notes: notes || null }
+            create: { shopifyProductId: productId, productTitle, modelId, notes: notes || null }
           });
         }
         imported++;
@@ -2453,7 +2482,7 @@ function Import() {
           /* @__PURE__ */ jsx("strong", { children: "year, make, model" }),
           ". Optional: ",
           /* @__PURE__ */ jsx("strong", { children: "product_id, product_title, notes" }),
-          ". Vehicles will be created automatically. You can assign products later via the Compatibility page."
+          ". Vehicles will be created automatically. Assign products later via the Compatibility page."
         ] }) }) }),
         /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
           /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Upload CSV File" }),
@@ -3118,7 +3147,7 @@ const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-BMVHlWtb.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/root-BDt2lil-.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes/app.compatibility": { "id": "routes/app.compatibility", "parentId": "routes/app", "path": "compatibility", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.compatibility-BwFEfZ5_.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] }, "routes/app.inventory": { "id": "routes/app.inventory", "parentId": "routes/app", "path": "inventory", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.inventory-G32PqCF2.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.garage": { "id": "routes/api.garage", "parentId": "root", "path": "api/garage", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.garage-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app.import": { "id": "routes/app.import", "parentId": "routes/app", "path": "import", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.import-2xvn5H3Z.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app._index-DXPcKoV8.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.ymm": { "id": "routes/api.ymm", "parentId": "root", "path": "api/ymm", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.ymm-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": true, "module": "/assets/app-DUk__qsH.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] } }, "url": "/assets/manifest-25311d19.js", "version": "25311d19" };
+const serverManifest = { "entry": { "module": "/assets/entry.client-BMVHlWtb.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/root-BDt2lil-.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes/app.compatibility": { "id": "routes/app.compatibility", "parentId": "routes/app", "path": "compatibility", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.compatibility-BwFEfZ5_.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] }, "routes/app.inventory": { "id": "routes/app.inventory", "parentId": "routes/app", "path": "inventory", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.inventory-G32PqCF2.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.garage": { "id": "routes/api.garage", "parentId": "root", "path": "api/garage", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.garage-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app.import": { "id": "routes/app.import", "parentId": "routes/app", "path": "import", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.import-C6zDLB3H.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app._index-DXPcKoV8.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.ymm": { "id": "routes/api.ymm", "parentId": "root", "path": "api/ymm", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.ymm-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": true, "module": "/assets/app-DUk__qsH.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] } }, "url": "/assets/manifest-e8b080a7.js", "version": "e8b080a7" };
 const mode = "production";
 const assetsBuildDirectory = "build\\client";
 const basename = "/";
