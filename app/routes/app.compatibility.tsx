@@ -1,13 +1,14 @@
-﻿// app/routes/app.compatibility.tsx
+﻿@'
+// app/routes/app.compatibility.tsx
 import { useState } from "react";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Page, Layout, Card, Text, BlockStack, InlineGrid,
   Select, Button, DataTable, Modal, TextField,
   Banner, Spinner, Box, InlineStack,
 } from "@shopify/polaris";
-import { ResourcePicker } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
@@ -77,10 +78,10 @@ export default function Compatibility() {
   const { years, makes, models, compatibilities, filters } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const nav = useNavigation();
+  const shopify = useAppBridge();
   const loading = nav.state !== "idle";
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [productId, setProductId] = useState("");
   const [productTitle, setProductTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -98,13 +99,12 @@ export default function Compatibility() {
     submit(params, { method: "get" });
   };
 
-  const handleProductPick = (payload: any) => {
-    const product = payload.selection?.[0];
-    if (product) {
-      setProductId(product.id);
-      setProductTitle(product.title);
+  const handlePickProduct = async () => {
+    const selected = await shopify.resourcePicker({ type: "product", multiple: false });
+    if (selected && selected.length > 0) {
+      setProductId(selected[0].id);
+      setProductTitle(selected[0].title);
     }
-    setPickerOpen(false);
   };
 
   const handleAdd = () => {
@@ -153,7 +153,16 @@ export default function Compatibility() {
               <InlineGrid columns={3} gap="300">
                 <Select label="Year" options={yearOptions} value={filters.year} onChange={(v) => handleFilterChange("year", v)} />
                 <Select label="Make" options={makeOptions} value={filters.make} onChange={(v) => handleFilterChange("make", v)} disabled={!filters.year} />
-                <Select label="Model" options={modelOptions} value={filters.model ? String(models.find(m => m.name === filters.model)?.id || "") : ""} onChange={(v) => { const name = models.find(m => m.id === parseInt(v))?.name || ""; handleFilterChange("model", name); }} disabled={!filters.make} />
+                <Select
+                  label="Model"
+                  options={modelOptions}
+                  value={filters.model ? String(models.find(m => m.name === filters.model)?.id || "") : ""}
+                  onChange={(v) => {
+                    const name = models.find(m => m.id === parseInt(v))?.name || "";
+                    handleFilterChange("model", name);
+                  }}
+                  disabled={!filters.make}
+                />
               </InlineGrid>
             </BlockStack>
           </Card>
@@ -188,14 +197,6 @@ export default function Compatibility() {
         </Layout.Section>
       </Layout>
 
-      <ResourcePicker
-        resourceType="Product"
-        open={pickerOpen}
-        onSelection={handleProductPick}
-        onCancel={() => setPickerOpen(false)}
-        allowMultiple={false}
-      />
-
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -206,7 +207,7 @@ export default function Compatibility() {
         <Modal.Section>
           <BlockStack gap="400">
             <InlineStack gap="300" align="start">
-              <Button onClick={() => setPickerOpen(true)}>
+              <Button onClick={handlePickProduct}>
                 {productId ? "Change Product" : "Select Product from Store"}
               </Button>
             </InlineStack>
@@ -229,3 +230,4 @@ export default function Compatibility() {
     </Page>
   );
 }
+'@ | Set-Content app/routes/app.compatibility.tsx -Encoding UTF8
