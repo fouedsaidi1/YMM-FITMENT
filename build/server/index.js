@@ -8,7 +8,7 @@ import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import React, { useState, useCallback, createContext } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { Button, Page, Layout, Card, BlockStack, Text, InlineGrid, Select, InlineStack, Spinner, DataTable, Box, Banner, Modal, TextField, Badge, DropZone, Icon, List, AppProvider as AppProvider$1 } from "@shopify/polaris";
+import { Checkbox, Page, Layout, Banner, Card, BlockStack, Text, Button, Badge, InlineGrid, Select, Spinner, InlineStack, DataTable, Box, Modal, TextField, DropZone, Icon, List, AppProvider as AppProvider$1 } from "@shopify/polaris";
 import crypto from "crypto";
 import { setCrypto, setAbstractRuntimeString } from "@shopify/shopify-api/runtime";
 import "@shopify/shopify-api/adapters/web-api";
@@ -1841,6 +1841,319 @@ shopify.unauthenticated;
 shopify.login;
 shopify.registerWebhooks;
 shopify.sessionStorage;
+const loader$9 = async ({ request }) => {
+  await authenticate.admin(request);
+  const url = new URL(request.url);
+  const make = url.searchParams.get("make") || "";
+  const model = url.searchParams.get("model") || "";
+  const yearFrom = url.searchParams.get("yearFrom") || "";
+  const yearTo = url.searchParams.get("yearTo") || "";
+  const allMakes = await prisma.vehicleMake.findMany({ distinct: ["name"], orderBy: { name: "asc" } });
+  const models = make ? await prisma.vehicleModel.findMany({ where: { make: { name: make } }, distinct: ["name"], orderBy: { name: "asc" } }) : [];
+  const years = await prisma.vehicleYear.findMany({ orderBy: { year: "desc" } });
+  const vehicles = make && model && yearFrom && yearTo ? await prisma.vehicleModel.findMany({
+    where: {
+      name: model,
+      make: { name: make, year: { year: { gte: parseInt(yearFrom), lte: parseInt(yearTo) } } }
+    },
+    include: { make: { include: { year: true } } },
+    orderBy: { make: { year: { year: "asc" } } }
+  }) : [];
+  return json({ allMakes, models, years, vehicles, filters: { make, model, yearFrom, yearTo } });
+};
+const action$4 = async ({ request }) => {
+  await authenticate.admin(request);
+  const form = await request.formData();
+  const modelIds = JSON.parse(form.get("modelIds"));
+  const products = JSON.parse(form.get("products"));
+  const notes = form.get("notes") || "";
+  let created = 0;
+  for (const modelId of modelIds) {
+    for (const product of products) {
+      await prisma.productCompatibility.upsert({
+        where: { shopifyProductId_modelId: { shopifyProductId: product.id, modelId } },
+        update: { productTitle: product.title, notes },
+        create: { shopifyProductId: product.id, productTitle: product.title, modelId, notes }
+      });
+      created++;
+    }
+  }
+  return json({ success: true, created });
+};
+function AssignByProduct() {
+  const { allMakes, models, years, vehicles, filters } = useLoaderData();
+  const submit = useSubmit();
+  const nav = useNavigation();
+  const shopify2 = useAppBridge();
+  const loading = nav.state !== "idle";
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [selectedModelIds, setSelectedModelIds] = useState(/* @__PURE__ */ new Set());
+  const [result, setResult] = useState(null);
+  const makeOptions = [{ label: "Select make", value: "" }, ...allMakes.map((m) => ({ label: m.name, value: m.name }))];
+  const modelOptions = [{ label: "Select model", value: "" }, ...models.map((m) => ({ label: m.name, value: m.name }))];
+  const yearOptions = [{ label: "Select year", value: "" }, ...years.map((y) => ({ label: String(y.year), value: String(y.year) }))];
+  const handleFilterChange = (key, value) => {
+    const params = { ...filters };
+    params[key] = value;
+    if (key === "make") {
+      params.model = "";
+      params.yearFrom = "";
+      params.yearTo = "";
+    }
+    submit(params, { method: "get" });
+  };
+  const handlePickProducts = async () => {
+    const selected = await shopify2.resourcePicker({ type: "product", multiple: true });
+    if (selected && selected.length > 0) {
+      setSelectedProducts(selected.map((p) => ({ id: p.id, title: p.title })));
+    }
+  };
+  const toggleVehicle = (id) => {
+    setSelectedModelIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelectedModelIds(
+      selectedModelIds.size === vehicles.length ? /* @__PURE__ */ new Set() : new Set(vehicles.map((v) => v.id))
+    );
+  };
+  const handleAssign = () => {
+    if (!selectedProducts.length || !selectedModelIds.size) return;
+    const formData = new FormData();
+    formData.append("modelIds", JSON.stringify(Array.from(selectedModelIds)));
+    formData.append("products", JSON.stringify(selectedProducts));
+    submit(formData, { method: "post" });
+    setResult({ created: selectedModelIds.size * selectedProducts.length });
+    setSelectedModelIds(/* @__PURE__ */ new Set());
+  };
+  const vehicleRows = vehicles.map((v) => [
+    /* @__PURE__ */ jsx(Checkbox, { label: "", checked: selectedModelIds.has(v.id), onChange: () => toggleVehicle(v.id) }),
+    String(v.make.year.year),
+    v.make.name,
+    v.name
+  ]);
+  return /* @__PURE__ */ jsx(Page, { title: "Assign by Product", backAction: { content: "Dashboard", url: "/app" }, children: /* @__PURE__ */ jsxs(Layout, { children: [
+    result && /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Banner, { tone: "success", onDismiss: () => setResult(null), children: /* @__PURE__ */ jsxs("p", { children: [
+      "Created ",
+      /* @__PURE__ */ jsx("strong", { children: result.created }),
+      " compatibility rules."
+    ] }) }) }),
+    /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
+      /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Step 1 — Select Products" }),
+      /* @__PURE__ */ jsx(Button, { onClick: handlePickProducts, children: selectedProducts.length > 0 ? `${selectedProducts.length} product(s) selected — Change` : "Pick Products from Store" }),
+      selectedProducts.length > 0 && /* @__PURE__ */ jsx(BlockStack, { gap: "200", children: selectedProducts.map((p) => /* @__PURE__ */ jsx(Badge, { tone: "success", children: p.title }, p.id)) })
+    ] }) }) }),
+    /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
+      /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Step 2 — Filter Vehicles" }),
+      /* @__PURE__ */ jsxs(InlineGrid, { columns: 4, gap: "300", children: [
+        /* @__PURE__ */ jsx(Select, { label: "Make", options: makeOptions, value: filters.make, onChange: (v) => handleFilterChange("make", v) }),
+        /* @__PURE__ */ jsx(Select, { label: "Model", options: modelOptions, value: filters.model, onChange: (v) => handleFilterChange("model", v), disabled: !filters.make }),
+        /* @__PURE__ */ jsx(Select, { label: "Year From", options: yearOptions, value: filters.yearFrom, onChange: (v) => handleFilterChange("yearFrom", v), disabled: !filters.model }),
+        /* @__PURE__ */ jsx(Select, { label: "Year To", options: yearOptions, value: filters.yearTo, onChange: (v) => handleFilterChange("yearTo", v), disabled: !filters.yearFrom })
+      ] }),
+      loading && /* @__PURE__ */ jsx(Spinner, { size: "small" }),
+      vehicles.length > 0 && /* @__PURE__ */ jsxs(BlockStack, { gap: "300", children: [
+        /* @__PURE__ */ jsxs(InlineStack, { align: "space-between", children: [
+          /* @__PURE__ */ jsxs(Text, { as: "p", variant: "bodySm", tone: "subdued", children: [
+            vehicles.length,
+            " vehicles found"
+          ] }),
+          /* @__PURE__ */ jsx(Button, { size: "micro", onClick: toggleAll, children: selectedModelIds.size === vehicles.length ? "Deselect All" : "Select All" })
+        ] }),
+        /* @__PURE__ */ jsx(
+          DataTable,
+          {
+            columnContentTypes: ["text", "text", "text", "text"],
+            headings: ["", "Year", "Make", "Model"],
+            rows: vehicleRows
+          }
+        )
+      ] }),
+      filters.model && filters.yearFrom && filters.yearTo && vehicles.length === 0 && !loading && /* @__PURE__ */ jsx(Banner, { tone: "warning", children: /* @__PURE__ */ jsx("p", { children: "No vehicles found for this combination." }) })
+    ] }) }) }),
+    /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
+      /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Step 3 — Assign" }),
+      /* @__PURE__ */ jsxs(Text, { as: "p", variant: "bodySm", tone: "subdued", children: [
+        selectedProducts.length,
+        " product(s) × ",
+        selectedModelIds.size,
+        " vehicle(s) = ",
+        /* @__PURE__ */ jsxs("strong", { children: [
+          selectedProducts.length * selectedModelIds.size,
+          " rules"
+        ] }),
+        " will be created."
+      ] }),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          variant: "primary",
+          onClick: handleAssign,
+          disabled: !selectedProducts.length || !selectedModelIds.size || loading,
+          loading,
+          children: "Assign Compatibility Rules"
+        }
+      )
+    ] }) }) })
+  ] }) });
+}
+const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  action: action$4,
+  default: AssignByProduct,
+  loader: loader$9
+}, Symbol.toStringTag, { value: "Module" }));
+const loader$8 = async ({ request }) => {
+  await authenticate.admin(request);
+  const url = new URL(request.url);
+  const make = url.searchParams.get("make") || "";
+  const model = url.searchParams.get("model") || "";
+  const yearFrom = url.searchParams.get("yearFrom") || "";
+  const yearTo = url.searchParams.get("yearTo") || "";
+  const allMakes = await prisma.vehicleMake.findMany({ distinct: ["name"], orderBy: { name: "asc" } });
+  const models = make ? await prisma.vehicleModel.findMany({ where: { make: { name: make } }, distinct: ["name"], orderBy: { name: "asc" } }) : [];
+  const years = await prisma.vehicleYear.findMany({ orderBy: { year: "desc" } });
+  const vehicles = make && model && yearFrom && yearTo ? await prisma.vehicleModel.findMany({
+    where: {
+      name: model,
+      make: { name: make, year: { year: { gte: parseInt(yearFrom), lte: parseInt(yearTo) } } }
+    },
+    include: { make: { include: { year: true } } },
+    orderBy: { make: { year: { year: "asc" } } }
+  }) : [];
+  return json({ allMakes, models, years, vehicles, filters: { make, model, yearFrom, yearTo } });
+};
+const action$3 = async ({ request }) => {
+  await authenticate.admin(request);
+  const form = await request.formData();
+  const modelIds = JSON.parse(form.get("modelIds"));
+  const products = JSON.parse(form.get("products"));
+  const notes = form.get("notes") || "";
+  let created = 0;
+  for (const modelId of modelIds) {
+    for (const product of products) {
+      await prisma.productCompatibility.upsert({
+        where: { shopifyProductId_modelId: { shopifyProductId: product.id, modelId } },
+        update: { productTitle: product.title, notes },
+        create: { shopifyProductId: product.id, productTitle: product.title, modelId, notes }
+      });
+      created++;
+    }
+  }
+  return json({ success: true, created });
+};
+function AssignByVehicle() {
+  const { allMakes, models, years, vehicles, filters } = useLoaderData();
+  const submit = useSubmit();
+  const nav = useNavigation();
+  const shopify2 = useAppBridge();
+  const loading = nav.state !== "idle";
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [result, setResult] = useState(null);
+  const makeOptions = [{ label: "Select make", value: "" }, ...allMakes.map((m) => ({ label: m.name, value: m.name }))];
+  const modelOptions = [{ label: "Select model", value: "" }, ...models.map((m) => ({ label: m.name, value: m.name }))];
+  const yearOptions = [{ label: "Select year", value: "" }, ...years.map((y) => ({ label: String(y.year), value: String(y.year) }))];
+  const handleFilterChange = (key, value) => {
+    const params = { ...filters };
+    params[key] = value;
+    if (key === "make") {
+      params.model = "";
+      params.yearFrom = "";
+      params.yearTo = "";
+    }
+    submit(params, { method: "get" });
+  };
+  const handlePickProducts = async () => {
+    const selected = await shopify2.resourcePicker({ type: "product", multiple: true });
+    if (selected && selected.length > 0) {
+      setSelectedProducts(selected.map((p) => ({ id: p.id, title: p.title })));
+    }
+  };
+  const handleAssign = () => {
+    if (!selectedProducts.length || !vehicles.length) return;
+    const formData = new FormData();
+    formData.append("modelIds", JSON.stringify(vehicles.map((v) => v.id)));
+    formData.append("products", JSON.stringify(selectedProducts));
+    submit(formData, { method: "post" });
+    setResult({ created: vehicles.length * selectedProducts.length });
+    setSelectedProducts([]);
+  };
+  const vehicleRows = vehicles.map((v) => [
+    String(v.make.year.year),
+    v.make.name,
+    v.name
+  ]);
+  return /* @__PURE__ */ jsx(Page, { title: "Assign by Vehicle", backAction: { content: "Dashboard", url: "/app" }, children: /* @__PURE__ */ jsxs(Layout, { children: [
+    result && /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Banner, { tone: "success", onDismiss: () => setResult(null), children: /* @__PURE__ */ jsxs("p", { children: [
+      "Created ",
+      /* @__PURE__ */ jsx("strong", { children: result.created }),
+      " compatibility rules."
+    ] }) }) }),
+    /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
+      /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Step 1 — Select Vehicle Range" }),
+      /* @__PURE__ */ jsxs(InlineGrid, { columns: 4, gap: "300", children: [
+        /* @__PURE__ */ jsx(Select, { label: "Make", options: makeOptions, value: filters.make, onChange: (v) => handleFilterChange("make", v) }),
+        /* @__PURE__ */ jsx(Select, { label: "Model", options: modelOptions, value: filters.model, onChange: (v) => handleFilterChange("model", v), disabled: !filters.make }),
+        /* @__PURE__ */ jsx(Select, { label: "Year From", options: yearOptions, value: filters.yearFrom, onChange: (v) => handleFilterChange("yearFrom", v), disabled: !filters.model }),
+        /* @__PURE__ */ jsx(Select, { label: "Year To", options: yearOptions, value: filters.yearTo, onChange: (v) => handleFilterChange("yearTo", v), disabled: !filters.yearFrom })
+      ] }),
+      loading && /* @__PURE__ */ jsx(Spinner, { size: "small" }),
+      vehicles.length > 0 && /* @__PURE__ */ jsxs(BlockStack, { gap: "200", children: [
+        /* @__PURE__ */ jsxs(Text, { as: "p", variant: "bodySm", tone: "subdued", children: [
+          vehicles.length,
+          " vehicles matched — all will be assigned:"
+        ] }),
+        /* @__PURE__ */ jsx(
+          DataTable,
+          {
+            columnContentTypes: ["text", "text", "text"],
+            headings: ["Year", "Make", "Model"],
+            rows: vehicleRows
+          }
+        )
+      ] }),
+      filters.model && filters.yearFrom && filters.yearTo && vehicles.length === 0 && !loading && /* @__PURE__ */ jsx(Banner, { tone: "warning", children: /* @__PURE__ */ jsx("p", { children: "No vehicles found for this combination." }) })
+    ] }) }) }),
+    /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
+      /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Step 2 — Select Products" }),
+      /* @__PURE__ */ jsx(Button, { onClick: handlePickProducts, children: selectedProducts.length > 0 ? `${selectedProducts.length} product(s) selected — Change` : "Pick Products from Store" }),
+      selectedProducts.length > 0 && /* @__PURE__ */ jsx(BlockStack, { gap: "200", children: selectedProducts.map((p) => /* @__PURE__ */ jsx(Badge, { tone: "success", children: p.title }, p.id)) })
+    ] }) }) }),
+    /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
+      /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Step 3 — Assign" }),
+      /* @__PURE__ */ jsxs(Text, { as: "p", variant: "bodySm", tone: "subdued", children: [
+        vehicles.length,
+        " vehicle(s) × ",
+        selectedProducts.length,
+        " product(s) = ",
+        /* @__PURE__ */ jsxs("strong", { children: [
+          vehicles.length * selectedProducts.length,
+          " rules"
+        ] }),
+        " will be created."
+      ] }),
+      /* @__PURE__ */ jsx(
+        Button,
+        {
+          variant: "primary",
+          onClick: handleAssign,
+          disabled: !selectedProducts.length || !vehicles.length || loading,
+          loading,
+          children: "Assign Compatibility Rules"
+        }
+      )
+    ] }) }) })
+  ] }) });
+}
+const route2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  action: action$3,
+  default: AssignByVehicle,
+  loader: loader$8
+}, Symbol.toStringTag, { value: "Module" }));
 const loader$7 = async ({ request }) => {
   await authenticate.admin(request);
   const url = new URL(request.url);
@@ -2029,7 +2342,7 @@ function Compatibility() {
     }
   );
 }
-const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$2,
   default: Compatibility,
@@ -2168,7 +2481,7 @@ function Inventory() {
     ] }) }) })
   ] }) });
 }
-const route2 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: Inventory,
   loader: loader$6
@@ -2284,7 +2597,7 @@ const action$1 = async ({ request }) => {
   }
   return json({ error: "Method not allowed" }, { status: 405, headers: cors });
 };
-const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action: action$1,
   loader: loader$5
@@ -2559,7 +2872,7 @@ function Import() {
     }
   );
 }
-const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   action,
   default: Import,
@@ -2618,6 +2931,16 @@ function Index() {
         /* @__PURE__ */ jsx(Button, { url: "/app/compatibility", variant: "primary", children: "Manage Compatibility" })
       ] }) }),
       /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "300", children: [
+        /* @__PURE__ */ jsx(Text, { as: "h3", variant: "headingMd", children: "Assign by Product" }),
+        /* @__PURE__ */ jsx(Text, { as: "p", variant: "bodySm", tone: "subdued", children: "Pick a product then assign it to multiple vehicles at once." }),
+        /* @__PURE__ */ jsx(Button, { url: "/app/assign-by-product", children: "Assign by Product" })
+      ] }) }),
+      /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "300", children: [
+        /* @__PURE__ */ jsx(Text, { as: "h3", variant: "headingMd", children: "Assign by Vehicle" }),
+        /* @__PURE__ */ jsx(Text, { as: "p", variant: "bodySm", tone: "subdued", children: "Pick a make/model and year range then assign products." }),
+        /* @__PURE__ */ jsx(Button, { url: "/app/assign-by-vehicle", children: "Assign by Vehicle" })
+      ] }) }),
+      /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "300", children: [
         /* @__PURE__ */ jsx(Text, { as: "h3", variant: "headingMd", children: "Bulk CSV Import" }),
         /* @__PURE__ */ jsx(Text, { as: "p", variant: "bodySm", tone: "subdued", children: "Upload a CSV to import thousands of rules at once." }),
         /* @__PURE__ */ jsx(Button, { url: "/app/import", children: "Import CSV" })
@@ -2630,12 +2953,11 @@ function Index() {
     ] }) }),
     /* @__PURE__ */ jsx(Layout.Section, { children: /* @__PURE__ */ jsx(Card, { children: /* @__PURE__ */ jsxs(BlockStack, { gap: "400", children: [
       /* @__PURE__ */ jsx(Text, { as: "h2", variant: "headingMd", children: "Recent Compatibility Rules" }),
-      rows.length > 0 ? /* @__PURE__ */ jsx(DataTable, { columnContentTypes: ["text", "text", "text"], headings: ["Product", "Vehicle", "Status"], rows }) : /* @__PURE__ */ jsx(Box, { padding: "400", children: /* @__PURE__ */ jsx(Text, { as: "p", tone: "subdued", children: "No rules yet. Use Bulk Import or add manually." }) }),
-      /* @__PURE__ */ jsx(Button, { url: "/app/compatibility", variant: "plain", children: "View all →" })
+      rows.length > 0 ? /* @__PURE__ */ jsx(DataTable, { columnContentTypes: ["text", "text", "text"], headings: ["Product", "Vehicle", "Status"], rows }) : /* @__PURE__ */ jsx(Box, { padding: "400", children: /* @__PURE__ */ jsx(Text, { as: "p", tone: "subdued", children: "No rules yet. Use Bulk Import or add manually." }) })
     ] }) }) })
   ] }) });
 }
-const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: Index,
   loader: loader$3
@@ -2704,7 +3026,7 @@ const loader$2 = async ({ request }) => {
     return json({ error: "Internal server error" }, { status: 500, headers: corsHeaders });
   }
 };
-const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$2
 }, Symbol.toStringTag, { value: "Module" }));
@@ -2712,7 +3034,7 @@ const loader$1 = async ({ request }) => {
   await authenticate.admin(request);
   return null;
 };
-const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   loader: loader$1
 }, Symbol.toStringTag, { value: "Module" }));
@@ -3146,14 +3468,14 @@ function ErrorBoundary() {
 const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   ErrorBoundary,
   default: App,
   headers,
   loader
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-BMVHlWtb.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/root-BDt2lil-.js", "imports": ["/assets/components-BNdW9vrW.js"], "css": [] }, "routes/app.compatibility": { "id": "routes/app.compatibility", "parentId": "routes/app", "path": "compatibility", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.compatibility-DOIoegk5.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] }, "routes/app.inventory": { "id": "routes/app.inventory", "parentId": "routes/app", "path": "inventory", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.inventory-G32PqCF2.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/Select-B_niDmQF.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.garage": { "id": "routes/api.garage", "parentId": "root", "path": "api/garage", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.garage-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app.import": { "id": "routes/app.import", "parentId": "routes/app", "path": "import", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.import-C6zDLB3H.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app._index-DXPcKoV8.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/Page-2Ork6o4r.js", "/assets/InlineGrid-DsNx9Fb0.js", "/assets/context-TqNDrU7E.js"], "css": [] }, "routes/api.ymm": { "id": "routes/api.ymm", "parentId": "root", "path": "api/ymm", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.ymm-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": true, "module": "/assets/app-DUk__qsH.js", "imports": ["/assets/components-BNdW9vrW.js", "/assets/context-TqNDrU7E.js", "/assets/context-j4LxaSSK.js"], "css": [] } }, "url": "/assets/manifest-79ad9766.js", "version": "79ad9766" };
+const serverManifest = { "entry": { "module": "/assets/entry.client-Car20xT0.js", "imports": ["/assets/components-4muZANNq.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/root-xn6fj3M6.js", "imports": ["/assets/components-4muZANNq.js"], "css": [] }, "routes/app.assign-by-product": { "id": "routes/app.assign-by-product", "parentId": "routes/app", "path": "assign-by-product", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.assign-by-product-Dbnv87gJ.js", "imports": ["/assets/components-4muZANNq.js", "/assets/useAppBridge-Bj34gXAL.js", "/assets/Page-DVpO2U2k.js", "/assets/InlineGrid-DMA87u6w.js", "/assets/Select-CWD07NfA.js", "/assets/context-BAGBSuC7.js"], "css": [] }, "routes/app.assign-by-vehicle": { "id": "routes/app.assign-by-vehicle", "parentId": "routes/app", "path": "assign-by-vehicle", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.assign-by-vehicle-CP7BxwW0.js", "imports": ["/assets/components-4muZANNq.js", "/assets/useAppBridge-Bj34gXAL.js", "/assets/Page-DVpO2U2k.js", "/assets/InlineGrid-DMA87u6w.js", "/assets/Select-CWD07NfA.js", "/assets/context-BAGBSuC7.js"], "css": [] }, "routes/app.compatibility": { "id": "routes/app.compatibility", "parentId": "routes/app", "path": "compatibility", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.compatibility-BreoMcvE.js", "imports": ["/assets/components-4muZANNq.js", "/assets/useAppBridge-Bj34gXAL.js", "/assets/Page-DVpO2U2k.js", "/assets/InlineGrid-DMA87u6w.js", "/assets/Select-CWD07NfA.js", "/assets/context-BAGBSuC7.js", "/assets/context-BmPNBm9z.js"], "css": [] }, "routes/app.inventory": { "id": "routes/app.inventory", "parentId": "routes/app", "path": "inventory", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.inventory-CsnvJQYr.js", "imports": ["/assets/components-4muZANNq.js", "/assets/Page-DVpO2U2k.js", "/assets/InlineGrid-DMA87u6w.js", "/assets/Select-CWD07NfA.js", "/assets/context-BAGBSuC7.js"], "css": [] }, "routes/api.garage": { "id": "routes/api.garage", "parentId": "root", "path": "api/garage", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.garage-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app.import": { "id": "routes/app.import", "parentId": "routes/app", "path": "import", "index": void 0, "caseSensitive": void 0, "hasAction": true, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app.import-DIRzOP5x.js", "imports": ["/assets/components-4muZANNq.js", "/assets/Page-DVpO2U2k.js", "/assets/context-BAGBSuC7.js"], "css": [] }, "routes/app._index": { "id": "routes/app._index", "parentId": "routes/app", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/app._index-CoW0HqwB.js", "imports": ["/assets/components-4muZANNq.js", "/assets/Page-DVpO2U2k.js", "/assets/InlineGrid-DMA87u6w.js", "/assets/context-BAGBSuC7.js"], "css": [] }, "routes/api.ymm": { "id": "routes/api.ymm", "parentId": "root", "path": "api/ymm", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/api.ymm-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/auth.$": { "id": "routes/auth.$", "parentId": "root", "path": "auth/*", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": false, "module": "/assets/auth._-l0sNRNKZ.js", "imports": [], "css": [] }, "routes/app": { "id": "routes/app", "parentId": "root", "path": "app", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": true, "hasClientAction": false, "hasClientLoader": false, "hasErrorBoundary": true, "module": "/assets/app-CFd5EBQA.js", "imports": ["/assets/components-4muZANNq.js", "/assets/context-BAGBSuC7.js", "/assets/context-BmPNBm9z.js"], "css": [] } }, "url": "/assets/manifest-29bbe5c1.js", "version": "29bbe5c1" };
 const mode = "production";
 const assetsBuildDirectory = "build\\client";
 const basename = "/";
@@ -3170,13 +3492,29 @@ const routes = {
     caseSensitive: void 0,
     module: route0
   },
+  "routes/app.assign-by-product": {
+    id: "routes/app.assign-by-product",
+    parentId: "routes/app",
+    path: "assign-by-product",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route1
+  },
+  "routes/app.assign-by-vehicle": {
+    id: "routes/app.assign-by-vehicle",
+    parentId: "routes/app",
+    path: "assign-by-vehicle",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route2
+  },
   "routes/app.compatibility": {
     id: "routes/app.compatibility",
     parentId: "routes/app",
     path: "compatibility",
     index: void 0,
     caseSensitive: void 0,
-    module: route1
+    module: route3
   },
   "routes/app.inventory": {
     id: "routes/app.inventory",
@@ -3184,7 +3522,7 @@ const routes = {
     path: "inventory",
     index: void 0,
     caseSensitive: void 0,
-    module: route2
+    module: route4
   },
   "routes/api.garage": {
     id: "routes/api.garage",
@@ -3192,7 +3530,7 @@ const routes = {
     path: "api/garage",
     index: void 0,
     caseSensitive: void 0,
-    module: route3
+    module: route5
   },
   "routes/app.import": {
     id: "routes/app.import",
@@ -3200,7 +3538,7 @@ const routes = {
     path: "import",
     index: void 0,
     caseSensitive: void 0,
-    module: route4
+    module: route6
   },
   "routes/app._index": {
     id: "routes/app._index",
@@ -3208,7 +3546,7 @@ const routes = {
     path: void 0,
     index: true,
     caseSensitive: void 0,
-    module: route5
+    module: route7
   },
   "routes/api.ymm": {
     id: "routes/api.ymm",
@@ -3216,7 +3554,7 @@ const routes = {
     path: "api/ymm",
     index: void 0,
     caseSensitive: void 0,
-    module: route6
+    module: route8
   },
   "routes/auth.$": {
     id: "routes/auth.$",
@@ -3224,7 +3562,7 @@ const routes = {
     path: "auth/*",
     index: void 0,
     caseSensitive: void 0,
-    module: route7
+    module: route9
   },
   "routes/app": {
     id: "routes/app",
@@ -3232,7 +3570,7 @@ const routes = {
     path: "app",
     index: void 0,
     caseSensitive: void 0,
-    module: route8
+    module: route10
   }
 };
 export {

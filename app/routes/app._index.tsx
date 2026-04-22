@@ -73,6 +73,16 @@ export default function Index() {
               <Button url="/app/compatibility" variant="primary">Manage Compatibility</Button>
             </BlockStack></Card>
             <Card><BlockStack gap="300">
+              <Text as="h3" variant="headingMd">Assign by Product</Text>
+              <Text as="p" variant="bodySm" tone="subdued">Pick a product then assign it to multiple vehicles at once.</Text>
+              <Button url="/app/assign-by-product">Assign by Product</Button>
+            </BlockStack></Card>
+            <Card><BlockStack gap="300">
+              <Text as="h3" variant="headingMd">Assign by Vehicle</Text>
+              <Text as="p" variant="bodySm" tone="subdued">Pick a make/model and year range then assign products.</Text>
+              <Button url="/app/assign-by-vehicle">Assign by Vehicle</Button>
+            </BlockStack></Card>
+            <Card><BlockStack gap="300">
               <Text as="h3" variant="headingMd">Bulk CSV Import</Text>
               <Text as="p" variant="bodySm" tone="subdued">Upload a CSV to import thousands of rules at once.</Text>
               <Button url="/app/import">Import CSV</Button>
@@ -93,7 +103,6 @@ export default function Index() {
               ) : (
                 <Box padding="400"><Text as="p" tone="subdued">No rules yet. Use Bulk Import or add manually.</Text></Box>
               )}
-              <Button url="/app/compatibility" variant="plain">View all →</Button>
             </BlockStack>
           </Card>
         </Layout.Section>
