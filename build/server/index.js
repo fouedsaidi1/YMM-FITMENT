@@ -1831,7 +1831,7 @@ const shopify = shopifyApp({
     v3_webhookAdminContext: true,
     v3_authenticatePublic: true,
     v3_lineItemBilling: true,
-    unstable_newEmbeddedAuthStrategy: true
+    unstable_newEmbeddedAuthStrategy: false
   }
 });
 shopify.addDocumentResponseHeaders;
