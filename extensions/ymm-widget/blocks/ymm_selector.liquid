@@ -1,0 +1,123 @@
+{% comment %}
+  extensions/ymm-widget/blocks/ymm_selector.liquid
+  Theme App Extension block — add via Shopify Theme Editor
+{% endcomment %}
+
+<div
+  id="ymm-parts-finder"
+  data-api-url="{{ shop.url }}/apps/ymm-parts/api/ymm"
+  data-redirect-url="{{ block.settings.redirect_url | default: '/search' }}"
+  data-show-categories="{{ block.settings.show_categories }}"
+  style="
+    font-family: {{ block.settings.font_family | default: 'inherit' }};
+    --ymm-accent: {{ block.settings.accent_color | default: '#cc3300' }};
+    --ymm-bg: {{ block.settings.background_color | default: '#ffffff' }};
+    --ymm-border: {{ block.settings.border_color | default: '#e0e0e0' }};
+    --ymm-text: {{ block.settings.text_color | default: '#1a1a1a' }};
+  "
+>
+  <div class="ymm-widget-inner">
+    <div class="ymm-header">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 19.5L7 13h18l2 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <rect x="5" y="19" width="22" height="5" rx="2" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="10" cy="24" r="2" fill="currentColor"/>
+        <circle cx="22" cy="24" r="2" fill="currentColor"/>
+      </svg>
+      <span class="ymm-header-title">{{ block.settings.heading | default: 'Find Parts For Your Vehicle' }}</span>
+    </div>
+
+    <div class="ymm-selects">
+      <div class="ymm-field">
+        <label class="ymm-label" for="ymm-year">Year</label>
+        <select id="ymm-year" class="ymm-select" aria-label="Select year">
+          <option value="">Select Year</option>
+        </select>
+      </div>
+      <div class="ymm-field">
+        <label class="ymm-label" for="ymm-make">Make</label>
+        <select id="ymm-make" class="ymm-select" disabled aria-label="Select make">
+          <option value="">Select Make</option>
+        </select>
+      </div>
+      <div class="ymm-field">
+        <label class="ymm-label" for="ymm-model">Model</label>
+        <select id="ymm-model" class="ymm-select" disabled aria-label="Select model">
+          <option value="">Select Model</option>
+        </select>
+      </div>
+    </div>
+
+    {% if block.settings.show_categories %}
+    <div class="ymm-categories" id="ymm-categories">
+      <button class="ymm-cat active" data-cat="">All Parts</button>
+      <button class="ymm-cat" data-cat="Engine">Engine</button>
+      <button class="ymm-cat" data-cat="Brakes">Brakes</button>
+      <button class="ymm-cat" data-cat="Suspension">Suspension</button>
+      <button class="ymm-cat" data-cat="Electrical">Electrical</button>
+      <button class="ymm-cat" data-cat="Filters">Filters</button>
+      <button class="ymm-cat" data-cat="Exhaust">Exhaust</button>
+      <button class="ymm-cat" data-cat="Body">Body</button>
+    </div>
+    {% endif %}
+
+    <div class="ymm-actions">
+      <button id="ymm-search-btn" class="ymm-btn-primary" disabled>
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 10l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        {{ block.settings.button_text | default: 'Find Parts' }}
+      </button>
+      <button id="ymm-reset-btn" class="ymm-btn-secondary">Reset</button>
+    </div>
+
+    <div id="ymm-status" class="ymm-status" style="display:none"></div>
+  </div>
+</div>
+
+<style>
+  #ymm-parts-finder { background: var(--ymm-bg); border: 1px solid var(--ymm-border); border-radius: 8px; overflow: hidden; }
+  .ymm-widget-inner { padding: 20px; }
+  .ymm-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; color: var(--ymm-text); }
+  .ymm-header-title { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .ymm-selects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .ymm-field { display: flex; flex-direction: column; gap: 4px; }
+  .ymm-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #888; }
+  .ymm-select { height: 40px; border: 1px solid var(--ymm-border); border-radius: 5px; background: var(--ymm-bg); color: var(--ymm-text); font-size: 14px; padding: 0 10px; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer; }
+  .ymm-select:disabled { opacity: 0.45; cursor: not-allowed; }
+  .ymm-select:focus { outline: 2px solid var(--ymm-accent); outline-offset: 1px; }
+  .ymm-categories { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .ymm-cat { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--ymm-border); background: transparent; color: #666; cursor: pointer; transition: all 0.12s; }
+  .ymm-cat:hover, .ymm-cat.active { background: var(--ymm-accent); color: #fff; border-color: var(--ymm-accent); }
+  .ymm-actions { display: flex; gap: 8px; }
+  .ymm-btn-primary { flex: 1; height: 44px; background: var(--ymm-accent); border: none; border-radius: 5px; color: #fff; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: opacity 0.15s, transform 0.1s; }
+  .ymm-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ymm-btn-primary:hover:not(:disabled) { opacity: 0.88; }
+  .ymm-btn-primary:active:not(:disabled) { transform: scale(0.99); }
+  .ymm-btn-secondary { height: 44px; padding: 0 14px; border: 1px solid var(--ymm-border); border-radius: 5px; background: transparent; color: #888; font-size: 13px; cursor: pointer; }
+  .ymm-status { margin-top: 12px; padding: 10px 14px; border-radius: 5px; font-size: 13px; }
+  .ymm-status.success { background: #eafaf1; color: #1a6b3c; border: 1px solid #a3d9b8; }
+  .ymm-status.error { background: #fef0f0; color: #b91c1c; border: 1px solid #fca5a5; }
+  @media (max-width: 560px) { .ymm-selects { grid-template-columns: 1fr; } }
+</style>
+
+{{ 'ymm.js' | asset_url | script_tag }}
+
+{% schema %}
+{
+  "name": "YMM Parts Finder",
+  "target": "section",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Find Parts For Your Vehicle" },
+    { "type": "text", "id": "button_text", "label": "Button Text", "default": "Find Parts" },
+    { "type": "url", "id": "redirect_url", "label": "Search Results URL", "info": "Where to redirect after search. Leave blank to use /search" },
+    { "type": "checkbox", "id": "show_categories", "label": "Show Category Filter", "default": true },
+    { "type": "color", "id": "accent_color", "label": "Accent Color", "default": "#cc3300" },
+    { "type": "color", "id": "background_color", "label": "Background Color", "default": "#ffffff" },
+    { "type": "color", "id": "border_color", "label": "Border Color", "default": "#e0e0e0" },
+    { "type": "color", "id": "text_color", "label": "Text Color", "default": "#1a1a1a" },
+    { "type": "font_picker", "id": "font_family", "label": "Font", "default": "helvetica_n4" }
+  ],
+  "presets": [
+    { "name": "YMM Parts Finder" }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,24 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "25fe1eb8113a4ffe32866781ed8bdd23"
+name = "YMM-Fitment"
+application_url = "https://unexpired-usable-jeep.ngrok-free.dev/app"
+embedded = true
+
+[webhooks]
+api_version = "2026-04"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_inventory,read_products,write_inventory,write_products"
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://unexpired-usable-jeep.ngrok-free.dev/auth/callback",
+  "https://unexpired-usable-jeep.ngrok-free.dev/auth/shopify/callback",
+  "https://unexpired-usable-jeep.ngrok-free.dev/api/auth/callback"
+]
+
+[pos]
+embedded = false

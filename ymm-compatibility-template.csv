@@ -1,0 +1,11 @@
+year,make,model,product_id,product_title,notes
+2023,Toyota,Camry,gid://shopify/Product/123456789,OEM Front Brake Pad Set,Fits SE and XLE trims
+2023,Toyota,Camry,gid://shopify/Product/987654321,Air Filter K&N Performance,
+2023,Ford,F-150,gid://shopify/Product/111222333,Motorcraft Oil Filter,3.5L EcoBoost only
+2023,Ford,F-150,gid://shopify/Product/444555666,AC Delco Spark Plug Set,
+2022,Honda,Civic,gid://shopify/Product/777888999,Denso Oxygen Sensor,Front upstream sensor
+2022,Chevrolet,Silverado 1500,gid://shopify/Product/112233445,WIX Engine Air Filter,
+2022,Chevrolet,Silverado 1500,gid://shopify/Product/556677889,ACDelco Fuel Filter,5.3L V8
+2021,Jeep,Wrangler,gid://shopify/Product/998877665,Mopar Oil Filter,All engines
+2021,Dodge,Ram 1500,gid://shopify/Product/334455221,Champion Spark Plugs,5.7L HEMI only
+2020,Toyota,Tacoma,gid://shopify/Product/667788990,Toyota Genuine Cabin Air Filter,Double Cab and Access Cab

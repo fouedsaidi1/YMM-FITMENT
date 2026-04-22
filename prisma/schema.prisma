@@ -1,0 +1,98 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Session {
+  id          String    @id
+  shop        String
+  state       String
+  isOnline    Boolean   @default(false)
+  scope       String?
+  expires     DateTime?
+  accessToken String
+  userId      BigInt?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model VehicleYear {
+  id    Int         @id @default(autoincrement())
+  year  Int         @unique
+  makes VehicleMake[]
+}
+
+model VehicleMake {
+  id     Int            @id @default(autoincrement())
+  name   String
+  yearId Int
+  year   VehicleYear    @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  models VehicleModel[]
+
+  @@unique([name, yearId])
+}
+
+model VehicleModel {
+  id            Int                    @id @default(autoincrement())
+  name          String
+  makeId        Int
+  make          VehicleMake            @relation(fields: [makeId], references: [id], onDelete: Cascade)
+  compatibility ProductCompatibility[]
+  garageVehicles GarageVehicle[]
+
+  @@unique([name, makeId])
+}
+
+model ProductCompatibility {
+  id               Int          @id @default(autoincrement())
+  shopifyProductId String
+  productTitle     String
+  variantId        String?
+  modelId          Int
+  model            VehicleModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([shopifyProductId, modelId])
+  @@index([shopifyProductId])
+  @@index([modelId])
+}
+
+// My Garage — saves vehicles per customer
+model GarageVehicle {
+  id         Int          @id @default(autoincrement())
+  customerId String       // Shopify customer GID or anonymous token
+  shop       String
+  nickname   String?
+  modelId    Int
+  model      VehicleModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  submodel   String?
+  engine     String?
+  isDefault  Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([customerId, shop])
+}
+
+// CSV Import job log
+model ImportJob {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  filename  String
+  status    String   @default("pending")
+  totalRows Int      @default(0)
+  imported  Int      @default(0)
+  skipped   Int      @default(0)
+  errors    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
